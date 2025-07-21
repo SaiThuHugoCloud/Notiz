@@ -15,7 +15,7 @@ export default function HomePage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // reCAPTCHA state and ref
+  // reCAPTCHA state and reference
   const recaptchaRef = useRef(null); // Ref to hold the reCAPTCHA div element
   const [recaptchaApiLoaded, setRecaptchaApiLoaded] = useState(false); // To track if reCAPTCHA API script is loaded
   const [recaptchaWidgetId, setRecaptchaWidgetId] = useState(null); // New state to store the widget ID once rendered
