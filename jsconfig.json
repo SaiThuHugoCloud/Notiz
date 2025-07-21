@@ -1,7 +1,28 @@
+// NOTIZ-NEW/jsconfig.json
 {
   "compilerOptions": {
+    "baseUrl": ".", // This tells Next.js to resolve imports relative to the project root
     "paths": {
-      "@/*": ["./src/*"]
-    }
-  }
+      // Define aliases for your common directories
+      "@/lib/*": ["lib/*"], // Alias for the 'lib' folder
+      "@/components/*": ["src/components/*"] // Alias for the 'components' folder inside 'src'
+    },
+    // Recommended settings for Next.js
+    "jsx": "preserve",
+    "target": "es2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "incremental": true
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+  "exclude": ["node_modules"]
 }

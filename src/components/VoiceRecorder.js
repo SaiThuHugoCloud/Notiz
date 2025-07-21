@@ -1,11 +1,13 @@
+// NOTIZ-NEW/src/components/VoiceRecorder.js
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Mic, MicOff, Clipboard as LucideClipboard, FileText as LucideFileText, Send as LucideSend, RotateCcw as LucideRotateCcw } from "lucide-react"; // Import Lucide icons
-// Removed Firebase imports as per user's request to prioritize multi-language.
-// If user wants to re-add auth, we will add them back in a later step.
+// Re-added LucideSend icon as Notion button is kept
+import { Mic, MicOff, Clipboard as LucideClipboard, FileText as LucideFileText, Send as LucideSend, RotateCcw as LucideRotateCcw, Save as LucideSave, Download as LucideDownload } from "lucide-react"; 
 
-export default function VoiceRecorder() {
+// onSaveToFirestore: A callback function from the parent (page.js) to save the note to Firestore.
+// currentUser: The Firebase user object passed from page.js
+export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { // Added currentUser prop
   const [recording, setRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [transcript, setTranscript] = useState("");
@@ -17,10 +19,16 @@ export default function VoiceRecorder() {
   const [selectedLanguage, setSelectedLanguage] = useState("en"); // New state for language selection
 
   const mediaRecorderRef = useRef(null);
-  const audioRef = useRef(null); // Ref for the audio element
-  let audioChunks = [];
+  const audioStreamRef = useRef(null); // New ref to store the audio stream for cleanup
+  const audioChunksRef = useRef([]); // Use a ref for audioChunks to persist across renders
 
   const [uiMessage, setUiMessage] = useState("Tap the mic to start your note!");
+
+  // Define your admin email here
+  const ADMIN_EMAIL = "saiminthu.innomax@gmail.com";
+  // Check if the current user is the admin
+  const isAdmin = currentUser && currentUser.email === ADMIN_EMAIL;
+
 
   // Cleanup for media recorder and audio URL
   useEffect(() => {
@@ -28,22 +36,27 @@ export default function VoiceRecorder() {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
+      // Stop all tracks on the stream to release microphone
+      if (audioStreamRef.current) { 
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null; 
+      }
       if (audioUrl) {
         URL.revokeObjectURL(audioUrl);
       }
     };
   }, [audioUrl]);
 
-  // Resets the UI and state for a new recording session
-  const resetState = () => {
+  // Resets the UI and state for a new recording session WITHOUT saving
+  const resetUiState = () => { // Renamed to clarify it only resets UI
     setRecording(false);
     setAudioUrl(null);
     setTranscript("");
-    setSegments([]); // Clear segments
+    setSegments([]); 
     setIsTranscribing(false);
     setSummary("");
     setCategory("Uncategorized");
-    audioChunks = [];
+    audioChunksRef.current = []; 
     setUiMessage("Ready for your next brilliant idea!");
   };
 
@@ -51,26 +64,32 @@ export default function VoiceRecorder() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream; 
       mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunks = [];
+      audioChunksRef.current = []; 
 
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          audioChunks.push(event.data);
+          audioChunksRef.current.push(event.data); 
         }
       };
 
       mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(audioChunks, { type: "audio/webm" });
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" }); 
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
         setRecording(false);
         setIsTranscribing(true);
         setUiMessage("Transcribing your voice... Almost there!");
 
+        if (audioStreamRef.current) { 
+          audioStreamRef.current.getTracks().forEach(track => track.stop());
+          audioStreamRef.current = null; 
+        }
+
         const formData = new FormData();
         formData.append("audio", blob, "recording.webm");
-        formData.append("language", selectedLanguage); // <-- Pass selected language to API
+        formData.append("language", selectedLanguage); 
 
         try {
           const res = await fetch("/api/transcribe", {
@@ -83,7 +102,7 @@ export default function VoiceRecorder() {
           if (res.ok && data.text) {
             console.log("✅ Transcribed Text:", data.text);
             setTranscript(data.text);
-            setSegments(data.segments || []); // Store segments
+            setSegments(data.segments || []); 
             setUiMessage("Transcription complete! Review and save.");
             showCustomAlert("📝 Transcription Complete", data.text, "Your voice has been converted to text. Click on text segments to jump in audio!");
           } else {
@@ -126,12 +145,21 @@ export default function VoiceRecorder() {
     setUiMessage("Processing recording...");
   };
 
+  // Modified sendToNotion function: it now only saves to Firestore and shows a message,
+  // without calling the Notion API.
   const sendToNotion = async () => {
-    // Authentication check is removed for now.
     if (!transcript) {
-      showCustomAlert("No Transcript", "There is no transcribed text to send to Notion.");
+      showCustomAlert("No Transcript", "There is no transcribed text to send.");
       return;
     }
+
+    if (!isAdmin) { // This check should ideally be done on the server too for true security
+      showCustomAlert("Access Denied", "Notion integration is for admin use only.", "Your note will be saved to your personal NotizVoice collection instead.");
+      // For non-admins, if they click this button, we only show info and reset UI, no save to Firestore
+      resetUiState(); 
+      return;
+    }
+
     setUiMessage("Sending note to Notion...");
     try {
       const res = await fetch("/api/notion", {
@@ -142,9 +170,16 @@ export default function VoiceRecorder() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setUiMessage("Note sent successfully! Start a new note.");
+        setUiMessage("Note sent successfully to Notion! Start a new note.");
         showCustomAlert("✅ Success!", "Note successfully sent to Notion!", "Your note has been successfully added to your Notion database.");
-        resetState();
+        // After sending to Notion, also save to Firestore
+        await onSaveToFirestore({ // Call parent's save function
+          title: transcript.substring(0, 50) + '...',
+          content: transcript,
+          category: category,
+          summary: summary,
+        });
+        resetUiState(); // Reset UI state only
       } else {
         console.error("❌ Failed to send to Notion:", data.error || "Unknown error");
         setUiMessage("Failed to send note to Notion.");
@@ -157,20 +192,105 @@ export default function VoiceRecorder() {
     }
   };
 
+  // Function to handle saving a note to Firestore from the button click
+  const handleSaveNoteButtonClick = async () => {
+    if (!transcript) {
+      showCustomAlert("No Text", "There is no transcribed text to save.");
+      return;
+    }
+    // Call the parent's save function
+    await onSaveToFirestore({
+      title: transcript.substring(0, 50) + '...',
+      content: transcript,
+      category: category,
+      summary: summary,
+    });
+    // After successful save, reset the UI to the initial state
+    resetUiState();
+  };
+
+  // --- Export Functions ---
+
+  // Helper function to trigger file download
+  const downloadFile = (filename, content, type) => {
+    const blob = new Blob([content], { type: type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportAsPlainText = () => {
+    if (!transcript) {
+      showCustomAlert("No Text", "There is no transcribed text to export.");
+      return;
+    }
+    const filename = `notizvoice_note_${new Date().toISOString().slice(0, 10)}.txt`;
+    let fileContent = `Title: ${transcript.substring(0, 50)}...\n`;
+    fileContent += `Category: ${category}\n\n`;
+    fileContent += `Transcript:\n${transcript}\n\n`;
+    if (summary) {
+      fileContent += `Summary:\n${summary}\n\n`;
+    }
+    if (segments.length > 0) {
+      fileContent += `Segments:\n`;
+      segments.forEach(s => {
+        const minutes = Math.floor(s.start / 60);
+        const seconds = Math.floor(s.start % 60);
+        fileContent += `[${minutes}:${seconds < 10 ? '0' : ''}${seconds}] ${s.text}\n`;
+      });
+    }
+    downloadFile(filename, fileContent, 'text/plain');
+    showCustomAlert("⬇️ Exported!", "Note exported as Plain Text.", "Check your downloads folder.");
+    resetUiState(); // Reset UI after export
+  };
+
+  const handleExportAsMarkdown = () => {
+    if (!transcript) {
+      showCustomAlert("No Text", "There is no transcribed text to export.");
+      return;
+    }
+    const filename = `notizvoice_note_${new Date().toISOString().slice(0, 10)}.md`;
+    let fileContent = `# ${transcript.substring(0, 50)}...\n\n`;
+    fileContent += `**Category:** ${category}\n\n`;
+    fileContent += `## Transcript\n\n${transcript}\n\n`;
+    if (summary) {
+      fileContent += `## Summary\n\n${summary}\n\n`;
+    }
+    if (segments.length > 0) {
+      fileContent += `## Segments\n\n`;
+      segments.forEach(s => {
+        const minutes = Math.floor(s.start / 60);
+        const seconds = Math.floor(s.start % 60);
+        fileContent += `- [${minutes}:${seconds < 10 ? '0' : ''}${seconds}] ${s.text}\n`;
+      });
+    }
+    downloadFile(filename, fileContent, 'text/markdown');
+    showCustomAlert("⬇️ Exported!", "Note exported as Markdown.", "Check your downloads folder.");
+    resetUiState(); // Reset UI after export
+  };
+
   const copyTranscriptToClipboard = () => {
     if (transcript) {
       const textarea = document.createElement('textarea');
-      textarea.value = transcript;
+      textarea.value = transcript; // Default copy is just the raw transcript
       document.body.appendChild(textarea);
       textarea.select();
       try {
         document.execCommand('copy');
         showCustomAlert("📋 Copied!", "Transcription copied to clipboard.", "You can now paste it anywhere you like.");
+        resetUiState(); // Reset UI after copy
       } catch (err) {
         console.error('Failed to copy text: ', err);
         showCustomAlert("❌ Copy Failed", "Could not copy text to clipboard.", "Your browser might not support direct clipboard access or there was an error.");
       }
       document.body.removeChild(textarea);
+    } else {
+      showCustomAlert("No Text", "There is no transcribed text to copy.");
     }
   };
 
@@ -192,6 +312,14 @@ export default function VoiceRecorder() {
         setSummary(data.summary);
         showCustomAlert("✨ Summary Generated", data.summary, "Here's a concise summary of your note.");
         setUiMessage("Summary ready! Review or send to Notion.");
+        // After summarizing, also save to Firestore
+        onSaveToFirestore({
+          title: transcript.substring(0, 50) + '...',
+          content: transcript,
+          category: category,
+          summary: data.summary, // Use the generated summary
+        });
+        resetUiState(); // Reset UI after summarize
       } else {
         showCustomAlert("❌ Summarization Failed", data.error || "Unknown error", "Could not generate a summary. Check server logs for details.");
         setUiMessage("Summarization failed.");
@@ -366,28 +494,55 @@ export default function VoiceRecorder() {
 
             {/* Action Buttons */}
             <div className="flex flex-col gap-3">
-              <button
-                onClick={sendToNotion}
-                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold text-base py-3 rounded-full flex items-center justify-center transition-colors duration-200 shadow-md"
-              >
-                <LucideSend className="w-5 h-5 mr-2" /> Send to Notion
-              </button>
+              {/* Send to Notion button - now conditional based on isAdmin */}
+              {isAdmin && ( // Only show if current user is the admin
+                <button
+                  onClick={sendToNotion} // This button is now modified to NOT call Notion API for non-admins
+                  className="flex items-center justify-center w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                >
+                  <LucideSend className="w-5 h-5 mr-2" /> Send to Notion (Admin)
+                </button>
+              )}
+
               <button
                 onClick={summarizeText}
                 disabled={isSummarizing}
-                className={`bg-yellow-500 hover:bg-yellow-600 text-white font-semibold text-base py-3 rounded-full flex items-center justify-center transition-colors duration-200 shadow-md ${isSummarizing ? 'opacity-70 cursor-not-allowed' : ''}`}
+                className={`flex items-center justify-center w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 ${isSummarizing ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 <LucideFileText className="w-5 h-5 mr-2" /> {isSummarizing ? 'Summarizing...' : 'Summarize Note'}
               </button>
+              
+              {/* Save to Notiz (Firestore) button - now conditional based on isAdmin */}
+              {isAdmin && ( // Only show if current user is the admin
+                <button
+                  onClick={handleSaveNoteButtonClick} // Call the new handler for the button
+                  className="flex items-center justify-center w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  <LucideSave className="w-5 h-5 mr-2" /> Save to Notiz (Admin)
+                </button>
+              )}
+
               <button
                 onClick={copyTranscriptToClipboard}
-                className="bg-green-500 hover:bg-green-600 text-white font-semibold text-base py-3 rounded-full flex items-center justify-center transition-colors duration-200 shadow-md"
+                className="flex items-center justify-center w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
               >
                 <LucideClipboard className="w-5 h-5 mr-2" /> Copy to Clipboard
               </button>
               <button
-                onClick={resetState}
-                className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold text-base py-3 rounded-full flex items-center justify-center transition-colors duration-200 shadow-md"
+                onClick={handleExportAsPlainText}
+                className="flex items-center justify-center w-full bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              >
+                <LucideDownload className="w-5 h-5 mr-2" /> Export as .txt
+              </button>
+              <button
+                onClick={handleExportAsMarkdown}
+                className="flex items-center justify-center w-full bg-gray-700 hover:bg-gray-800 text-white font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2"
+              >
+                <LucideDownload className="w-5 h-5 mr-2" /> Export as .md
+              </button>
+              <button
+                onClick={resetUiState} // Changed from resetState to resetUiState
+                className="flex items-center justify-center w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-3 px-4 rounded-full shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2"
               >
                 <LucideRotateCcw className="w-5 h-5 mr-2" /> Start New Note
               </button>
