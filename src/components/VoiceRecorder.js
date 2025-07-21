@@ -2,12 +2,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-// Re-added LucideSend icon as Notion button is kept
-import { Mic, MicOff, Clipboard as LucideClipboard, FileText as LucideFileText, Send as LucideSend, RotateCcw as LucideRotateCcw, Save as LucideSave, Download as LucideDownload } from "lucide-react"; 
+import { Mic, MicOff, Clipboard as LucideClipboard, FileText as LucideFileText, Send as LucideSend, RotateCcw as LucideRotateCcw, Save as LucideSave, Download as LucideDownload, Share2 as LucideShare2 } from "lucide-react"; 
 
 // onSaveToFirestore: A callback function from the parent (page.js) to save the note to Firestore.
 // currentUser: The Firebase user object passed from page.js
-export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { // Added currentUser prop
+export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { 
   const [recording, setRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [transcript, setTranscript] = useState("");
@@ -48,7 +47,7 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { // A
   }, [audioUrl]);
 
   // Resets the UI and state for a new recording session WITHOUT saving
-  const resetUiState = () => { // Renamed to clarify it only resets UI
+  const resetUiState = () => { 
     setRecording(false);
     setAudioUrl(null);
     setTranscript("");
@@ -145,17 +144,15 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { // A
     setUiMessage("Processing recording...");
   };
 
-  // Modified sendToNotion function: it now only saves to Firestore and shows a message,
-  // without calling the Notion API.
+  // sendToNotion function: now only for admin, and still shows info, not direct API call
   const sendToNotion = async () => {
     if (!transcript) {
       showCustomAlert("No Transcript", "There is no transcribed text to send.");
       return;
     }
 
-    if (!isAdmin) { // This check should ideally be done on the server too for true security
+    if (!isAdmin) { 
       showCustomAlert("Access Denied", "Notion integration is for admin use only.", "Your note will be saved to your personal NotizVoice collection instead.");
-      // For non-admins, if they click this button, we only show info and reset UI, no save to Firestore
       resetUiState(); 
       return;
     }
@@ -172,14 +169,13 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { // A
       if (res.ok && data.success) {
         setUiMessage("Note sent successfully to Notion! Start a new note.");
         showCustomAlert("✅ Success!", "Note successfully sent to Notion!", "Your note has been successfully added to your Notion database.");
-        // After sending to Notion, also save to Firestore
-        await onSaveToFirestore({ // Call parent's save function
+        await onSaveToFirestore({ 
           title: transcript.substring(0, 50) + '...',
           content: transcript,
           category: category,
           summary: summary,
         });
-        resetUiState(); // Reset UI state only
+        resetUiState(); 
       } else {
         console.error("❌ Failed to send to Notion:", data.error || "Unknown error");
         setUiMessage("Failed to send note to Notion.");
@@ -198,16 +194,51 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { // A
       showCustomAlert("No Text", "There is no transcribed text to save.");
       return;
     }
-    // Call the parent's save function
     await onSaveToFirestore({
       title: transcript.substring(0, 50) + '...',
       content: transcript,
       category: category,
       summary: summary,
     });
-    // After successful save, reset the UI to the initial state
-    resetUiState();
+    resetUiState(); // Reset UI after successful save
   };
+
+  // --- New Share Function ---
+  const handleShareNote = async () => {
+    if (!transcript) {
+      showCustomAlert("No Text", "There is no transcribed text to share.");
+      return;
+    }
+
+    // Check if Web Share API is available
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `NotizVoice Note: ${transcript.substring(0, 50)}...`,
+          text: transcript,
+          // url: 'https://yournotizvoiceapp.com', // Optional: if you have a URL for the note
+        });
+        showCustomAlert("✅ Shared!", "Note shared successfully via native sharing.", "The native share sheet was opened.");
+        resetUiState(); // Reset UI after successful share
+      } catch (error) {
+        console.error('Error sharing:', error);
+        if (error.name === 'AbortError') {
+          setMessage('Sharing cancelled.');
+        } else {
+          setMessage(`Error sharing: ${error.message}`);
+          showCustomAlert("❌ Sharing Failed", `Could not share note: ${error.message}`, "Native sharing failed or was cancelled.");
+        }
+      }
+    } else {
+      // Fallback if Web Share API is not supported
+      showCustomAlert(
+        "ℹ️ Native Sharing Not Supported",
+        "Your browser does not support native sharing.",
+        "Please use the 'Copy to Clipboard' or 'Export' buttons below to share your note."
+      );
+    }
+  };
+
 
   // --- Export Functions ---
 
