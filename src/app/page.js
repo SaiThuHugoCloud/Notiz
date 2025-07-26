@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { auth, db } from '/lib/firebase';
-import VoiceRecorder from '/src/components/VoiceRecorder';
+import VoiceRecorder from '/src/components/VoiceRecorder'; // Ensure this path is correct based on your setup
 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, sendEmailVerification, signOut } from 'firebase/auth';
 import { collection, addDoc, query, onSnapshot, orderBy, deleteDoc, doc } from 'firebase/firestore';
@@ -249,11 +249,13 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4 font-sans">
       <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl border border-gray-200">
-        <h1 className="text-3xl font-extrabold mb-8 text-center text-gray-900">NotizVoice</h1>
+        {/* REMOVED: This was the duplicate title */}
+        {/* <h1 className="text-3xl font-extrabold mb-8 text-center text-gray-900">NotizVoice</h1> */}
 
         {!user ? (
           // Authentication UI for non-logged-in users
           <>
+            <h1 className="text-3xl font-extrabold mb-8 text-center text-gray-900">NotizVoice</h1> {/* Added back for login page */}
             <div className="mb-4">
               <label htmlFor="email" className="block text-gray-700 text-sm font-semibold mb-2">Email:</label>
               <input
@@ -311,6 +313,7 @@ export default function HomePage() {
         ) : (
           // UI for logged-in users: Check if email is verified before showing app features
           <div className="text-center">
+            {/* Moved these from original page.js, now they will be above the VoiceRecorder component's content */}
             <p className="text-lg font-medium text-gray-800 mb-4">Logged in as: <span className="font-bold text-blue-700">{user.email}</span></p>
             <p className="text-sm text-gray-600 mb-6">User ID: <span className="font-mono bg-gray-100 p-1 rounded text-xs break-all">{user.uid}</span></p>
 
@@ -345,8 +348,7 @@ export default function HomePage() {
             ) : (
               // Show full app features if email is verified
               <>
-                {/* Voice Recorder Component */}
-                {/* Pass the current user to VoiceRecorder for admin checks */}
+                {/* Voice Recorder Component - Your logo is now within this component */}
                 <VoiceRecorder onSaveToFirestore={handleSaveNoteToFirestore} currentUser={user} />
 
                 {/* Saved Notes List (from Firestore) */}

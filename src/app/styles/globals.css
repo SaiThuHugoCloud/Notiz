@@ -2,9 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* REMOVED: No longer need @import for Noto Sans Myanmar here as it's handled by layout.js */
+/* @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Myanmar:wght@400;700&display=swap'); */
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* NEW: Define the font variables from layout.js here, so they can be used globally */
+  /* These will be set by Geist/Geist_Mono/Noto_Sans_Myanmar in layout.js,
+     but defining them here provides a fallback and makes them explicit for Tailwind config etc. */
+  --font-geist-sans: "Geist Sans", sans-serif; /* Example based on Geist font */
+  --font-geist-mono: "Geist Mono", monospace; /* Example based on Geist Mono font */
+  --font-noto-sans-myanmar: "Noto Sans Myanmar", sans-serif; /* NEW: Add Noto Sans Myanmar variable */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -15,16 +25,15 @@
 }
 
 body {
-  /* These variables are applied via layout.js className,
-     so they don't need to be set directly here unless you want
-     a fallback or global default for elements not covered by layout.js */
-  /* font-family: var(--font-geist-sans); */
-  /* font-family: var(--font-geist-mono); */
-
   background: var(--background);
   color: var(--foreground);
-  /* You can keep a fallback font-family here if needed, or rely on Tailwind's base styles */
-  font-family: sans-serif; /* A generic fallback */
+
+  /* CRITICAL: Update font-family to prioritize Noto Sans Myanmar for rendering Burmese script.
+     It should come BEFORE other generic fonts that might not support the script. */
+  font-family: var(--font-noto-sans-myanmar), var(--font-geist-sans), var(--font-geist-mono), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
-/* Add any other global styles here */
+/* Rest of your global styles (e.g., custom scrollbar, animations) should remain as they were. */
+
+/* Custom Scrollbar Style and Animations (If you choose to move them from VoiceRecorder.js) */
+/* (Keeping this comment block as a reminder, actual styles are not included here for brevity) */

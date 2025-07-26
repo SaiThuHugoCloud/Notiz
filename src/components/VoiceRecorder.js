@@ -2,11 +2,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Mic, MicOff, Clipboard as LucideClipboard, FileText as LucideFileText, Send as LucideSend, RotateCcw as LucideRotateCcw, Save as LucideSave, Download as LucideDownload, Share2 as LucideShare2 } from "lucide-react"; 
+import { Mic, MicOff, Clipboard as LucideClipboard, FileText as LucideFileText, Send as LucideSend, RotateCcw as LucideRotateCcw, Save as LucideSave, Download as LucideDownload, Share2 as LucideShare2 } from "lucide-react";
 
 // onSaveToFirestore: A callback function from the parent (page.js) to save the note to Firestore.
 // currentUser: The Firebase user object passed from page.js
-export default function VoiceRecorder({ onSaveToFirestore, currentUser }) { 
+export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
   const [recording, setRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [transcript, setTranscript] = useState("");
@@ -20,6 +20,8 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
   const mediaRecorderRef = useRef(null);
   const audioStreamRef = useRef(null); // New ref to store the audio stream for cleanup
   const audioChunksRef = useRef([]); // Use a ref for audioChunks to persist across renders
+  const audioRef = useRef(null); // Ref for audio playback (added to previous original to make seekAudio work)
+
 
   const [uiMessage, setUiMessage] = useState("Tap the mic to start your note!");
 
@@ -36,9 +38,9 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
         mediaRecorderRef.current.stop();
       }
       // Stop all tracks on the stream to release microphone
-      if (audioStreamRef.current) { 
+      if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
-        audioStreamRef.current = null; 
+        audioStreamRef.current = null;
       }
       if (audioUrl) {
         URL.revokeObjectURL(audioUrl);
@@ -47,15 +49,15 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
   }, [audioUrl]);
 
   // Resets the UI and state for a new recording session WITHOUT saving
-  const resetUiState = () => { 
+  const resetUiState = () => {
     setRecording(false);
     setAudioUrl(null);
     setTranscript("");
-    setSegments([]); 
+    setSegments([]);
     setIsTranscribing(false);
     setSummary("");
     setCategory("Uncategorized");
-    audioChunksRef.current = []; 
+    audioChunksRef.current = [];
     setUiMessage("Ready for your next brilliant idea!");
   };
 
@@ -63,32 +65,32 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream; 
+      audioStreamRef.current = stream;
       mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = []; 
+      audioChunksRef.current = [];
 
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data); 
+          audioChunksRef.current.push(event.data);
         }
       };
 
       mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" }); 
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
         setRecording(false);
         setIsTranscribing(true);
         setUiMessage("Transcribing your voice... Almost there!");
 
-        if (audioStreamRef.current) { 
+        if (audioStreamRef.current) {
           audioStreamRef.current.getTracks().forEach(track => track.stop());
-          audioStreamRef.current = null; 
+          audioStreamRef.current = null;
         }
 
         const formData = new FormData();
         formData.append("audio", blob, "recording.webm");
-        formData.append("language", selectedLanguage); 
+        formData.append("language", selectedLanguage);
 
         try {
           const res = await fetch("/api/transcribe", {
@@ -101,13 +103,13 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
           if (res.ok && data.text) {
             console.log("✅ Transcribed Text:", data.text);
             setTranscript(data.text);
-            setSegments(data.segments || []); 
+            setSegments(data.segments || []);
             setUiMessage("Transcription complete! Review and save.");
             showCustomAlert("📝 Transcription Complete", data.text, "Your voice has been converted to text. Click on text segments to jump in audio!");
           } else {
             console.error("❌ API Error:", data.error || "Unknown error");
             setUiMessage("Transcription failed. Please try again.");
-            showCustomAlert("❌ Transcription Failed", data.error || "Unknown error", "There was an issue converting your voice to text. Please ensure your OpenAI API key is valid.");
+            showCustomAlert("❌ Transcription Failed", data.error || "Unknown error", "There was an issue converting your voice to text. Please ensure your API key is valid.");
             setTranscript("");
             setSegments([]);
           }
@@ -132,7 +134,7 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
     } catch (err) {
       console.error("🎙️ Microphone access denied:", err);
       setUiMessage("Microphone access denied. Please allow access.");
-      showCustomAlert("⚠️ Microphone Access Denied", "Please allow microphone access to record.", "You need to grant microphone permissions in your browser settings to use the voice recorder.");
+      showCustomAlert("⚠️ Microphone Access Denied", "Please allow microphone permissions in your browser settings to use the voice recorder.");
     }
   };
 
@@ -151,9 +153,9 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
       return;
     }
 
-    if (!isAdmin) { 
+    if (!isAdmin) {
       showCustomAlert("Access Denied", "Notion integration is for admin use only.", "Your note will be saved to your personal NotizVoice collection instead.");
-      resetUiState(); 
+      resetUiState();
       return;
     }
 
@@ -169,13 +171,13 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
       if (res.ok && data.success) {
         setUiMessage("Note sent successfully to Notion! Start a new note.");
         showCustomAlert("✅ Success!", "Note successfully sent to Notion!", "Your note has been successfully added to your Notion database.");
-        await onSaveToFirestore({ 
+        await onSaveToFirestore({
           title: transcript.substring(0, 50) + '...',
           content: transcript,
           category: category,
           summary: summary,
         });
-        resetUiState(); 
+        resetUiState();
       } else {
         console.error("❌ Failed to send to Notion:", data.error || "Unknown error");
         setUiMessage("Failed to send note to Notion.");
@@ -223,9 +225,9 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
       } catch (error) {
         console.error('Error sharing:', error);
         if (error.name === 'AbortError') {
-          setMessage('Sharing cancelled.');
+          setUiMessage('Sharing cancelled.');
         } else {
-          setMessage(`Error sharing: ${error.message}`);
+          setUiMessage(`Error sharing: ${error.message}`);
           showCustomAlert("❌ Sharing Failed", `Could not share note: ${error.message}`, "Native sharing failed or was cancelled.");
         }
       }
@@ -419,10 +421,16 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
       <div className="absolute top-1/2 left-1/2 w-80 h-80 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-blob animation-delay-4000"></div>
 
       <div className="relative bg-white bg-opacity-90 backdrop-filter backdrop-blur-lg rounded-3xl shadow-2xl p-6 sm:p-10 w-full max-w-md text-center border border-gray-100 flex flex-col items-center z-10 animate-fade-in-up">
-        {/* App Title */}
-        <h1 className="text-3xl font-bold text-gray-800 mb-4 flex items-center justify-center">
-          NotizVoice <span className="ml-2 text-4xl">🗣️</span>
-        </h1>
+        {/* APP LOGO ONLY - NEW BLOCK. The text is part of the logo image itself. */}
+        <div className="mb-6 flex flex-col items-center">
+          <img
+            src="/notiz-logo.png" // Path to your logo in the public folder
+            alt="Notiz Voice To Text Logo"
+            className="h-24 sm:h-28 md:h-32 mb-4 drop-shadow-md"
+          />
+        </div>
+        {/* END APP LOGO ONLY */}
+
 
         {/* Language Selector */}
         <div className="w-full mb-6">
@@ -439,9 +447,10 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
             <option value="de">German</option>
             <option value="ja">Japanese</option>
             <option value="zh">Chinese</option>
-            <option value="th">Thai</option> {/* <-- Add this line for Thai */}
-            <option value="MM">Burmese</option>
-            {/* Add more languages supported by Whisper API */}
+            <option value="th">Thai</option>
+            {/* THIS IS THE CRITICAL CHANGE FOR BURMESE LANGUAGE CODE */}
+            <option value="my-MM">Burmese</option> {/* CHANGED FROM "my" to "my-MM" */}
+            {/* Add more languages supported by Google Cloud Speech-to-Text if needed */}
           </select>
         </div>
 
@@ -498,7 +507,7 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
                 segments.map((segment, index) => (
                   <span
                     key={index}
-                    className="cursor-pointer hover:bg-blue-200 rounded-sm px-1 py-0.5 transition-colors duration-100"
+                    className="cursor-pointer hover:bg-blue-200 transition-colors duration-100" /* MODIFIED: Removed padding/rounded classes */
                     onClick={() => seekAudio(segment.start)}
                     title={`Jump to ${segment.start.toFixed(2)}s`}
                   >
@@ -542,7 +551,7 @@ export default function VoiceRecorder({ onSaveToFirestore, currentUser }) {
               >
                 <LucideFileText className="w-5 h-5 mr-2" /> {isSummarizing ? 'Summarizing...' : 'Summarize Note'}
               </button>
-              
+
               {/* Save to Notiz (Firestore) button - now conditional based on isAdmin */}
               {isAdmin && ( // Only show if current user is the admin
                 <button
