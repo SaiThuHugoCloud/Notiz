@@ -2,13 +2,52 @@
 import { NextResponse } from "next/server";
 import { SpeechClient } from '@google-cloud/speech';
 
-// Initialize Google Cloud Speech Client
-// Credentials will be picked up from GOOGLE_APPLICATION_CREDENTIALS env var automatically
-// as long as it contains the JSON *content* (not a file path).
-const googleSpeechClient = new SpeechClient();
+// --- CRITICAL FIX START ---
+let googleSpeechClient;
+
+try {
+  // Get the JSON string from the Vercel environment variable
+  const googleCredentialsJsonString = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  if (!googleCredentialsJsonString) {
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.");
+  }
+
+  // Parse the JSON string into a JavaScript object
+  const credentials = JSON.parse(googleCredentialsJsonString);
+
+  // Initialize the SpeechClient EXPLICITLY with the parsed credentials.
+  // We set keyFilename to null to ensure it doesn't try to look for a file.
+  googleSpeechClient = new SpeechClient({
+    projectId: credentials.project_id, // Important to set the project ID
+    credentials: {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
+    },
+    keyFilename: null // Explicitly tell the client NOT to look for a file
+  });
+
+  console.log("Google Speech Client initialized successfully with provided credentials.");
+
+} catch (e) {
+  console.error("❌ Failed to initialize Google Speech Client:", e.message);
+  // Re-throw or handle this more gracefully if the app needs to start even without credentials.
+  // For transcription to work, this is a fatal error, so logging and letting it fail is fine.
+  // If this happens at startup, Vercel might show build/deploy errors.
+  googleSpeechClient = null; // Ensure it's null if initialization failed
+}
+// --- CRITICAL FIX END ---
+
 
 export async function POST(req) {
   console.log("--- Starting Google Cloud transcription request ---");
+
+  // Check if the client was initialized successfully
+  if (!googleSpeechClient) {
+    console.error("❌ Google Speech Client not initialized. Cannot process transcription request.");
+    return NextResponse.json({ error: "Server configuration error: Google Speech Client not initialized." }, { status: 500 });
+  }
+
   try {
     const formData = await req.formData();
     const audioFile = formData.get("audio");
@@ -25,36 +64,34 @@ export async function POST(req) {
     console.log(`Frontend selected language code received: ${selectedLanguage}`);
 
     // --- Google Cloud Language Code Mapping ---
-    // These should match the 'value' attributes in your VoiceRecorder.js select options.
     let languageCodeForGoogle = 'en-US'; // Default
     switch (selectedLanguage) {
       case 'en':
         languageCodeForGoogle = 'en-US';
         break;
       case 'es':
-        languageCodeForGoogle = 'es-ES'; // Spanish (Spain) - You might prefer 'es-LA' or other regional codes
+        languageCodeForGoogle = 'es-ES';
         break;
       case 'fr':
-        languageCodeForGoogle = 'fr-FR'; // French (France)
+        languageCodeForGoogle = 'fr-FR';
         break;
       case 'de':
-        languageCodeForGoogle = 'de-DE'; // German (Germany)
+        languageCodeForGoogle = 'de-DE';
         break;
       case 'ja':
-        languageCodeForGoogle = 'ja-JP'; // Japanese (Japan)
+        languageCodeForGoogle = 'ja-JP';
         break;
       case 'zh':
-        languageCodeForGoogle = 'zh-CN'; // Chinese (Mandarin, Simplified) - change to 'zh-TW' for Traditional, 'yue-HK' for Cantonese
+        languageCodeForGoogle = 'zh-CN';
         break;
       case 'th':
-        languageCodeForGoogle = 'th-TH'; // Thai (Thailand)
+        languageCodeForGoogle = 'th-TH';
         break;
-      case 'my-MM': // This is the explicit code for Burmese (Myanmar)
+      case 'my-MM':
         languageCodeForGoogle = 'my-MM';
         console.log("Backend: Explicitly setting Google language code to 'my-MM' for Burmese.");
         break;
       default:
-        // Fallback for unexpected language codes or if "auto" was sent by mistake
         languageCodeForGoogle = 'en-US';
         console.warn(`Backend: Unsupported/Unexpected language code '${selectedLanguage}'. Defaulting to 'en-US'.`);
     }
@@ -69,25 +106,13 @@ export async function POST(req) {
 
     const audioConfig = {
         encoding: 'WEBM_OPUS', // Common for MediaRecorder output as audio/webm
-        // CRITICAL: REMOVED sampleRateHertz to let Google auto-detect.
-        // This resolves many "No speech detected" issues for browser-recorded audio.
         languageCode: languageCodeForGoogle,
         enableWordTimeOffsets: true, // Needed for segments/timestamps
-        // Add speech contexts here to improve accuracy for specific Burmese terms.
-        // Replace these example phrases with actual, frequently spoken phrases from your users.
         speechContexts: [
             {
                 phrases: [
-                    "မှတ်စု", // Note
-                    "အစည်းအဝေး", // Meeting
-                    "အိုင်ဒီယာ", // Idea (direct transliteration of 'idea')
-                    "နိုတစ်", // Notiz (transliteration of your app name)
-                    "အသံမှတ်စု", // Voice note
-                    "မြန်မာဘာသာ", // Burmese language
-                    "မင်္ဂလာပါ", // Hello (Burmese)
-                    "ကောင်းပါသလား", // How are you? (Burmese)
-                    // ADD MORE SPECIFIC BURMESE PHRASES HERE FOR ACCURACY IMPROVEMENT
-                    // e.g., Common names, product names, industry terms.
+                    "မှတ်စု", "အစည်းအဝေး", "အိုင်ဒီယာ", "နိုတစ်",
+                    "အသံမှတ်စု", "မြန်မာဘာသာ", "မင်္ဂလာပါ", "ကောင်းပါသလား",
                 ],
             },
         ],
@@ -130,12 +155,11 @@ export async function POST(req) {
 
     if (!transcribedText) {
         console.warn("No transcription results found from Google Cloud Speech-to-Text. This might mean silence or poor audio quality.");
-        // Consider returning a more specific message to the user here.
         return NextResponse.json({ text: "No speech detected or transcription failed. Please try speaking clearly." });
     }
 
     console.log("✅ Google Cloud Speech-to-Text Transcription successful. Full Text Length:", transcribedText.length);
-    console.log("✅ Transcribed Text:", transcribedText); // Log the full text on backend for debugging
+    console.log("✅ Transcribed Text:", transcribedText);
     return NextResponse.json({ text: transcribedText, segments: segments });
 
   } catch (error) {
